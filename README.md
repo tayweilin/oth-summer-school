@@ -1,94 +1,168 @@
-# Hedera Testnet Contract Deployer
+# Decentralized Voting DApp — Hedera Testnet
 
-Deploys a **compiled** smart contract (solc / Hardhat / Foundry bytecode) to the
-**Hedera Testnet** using the official [`@hashgraph/sdk`](https://www.npmjs.com/package/@hashgraph/sdk).
+A smart-contract-based voting system for the question:
+**"Which topic should the next tech workshop cover?"**
 
-It uses `ContractCreateFlow`, which automatically uploads the bytecode to a
-Hedera file (chunked for large contracts) and creates the contract in one step —
-so you don't need separate `FileCreateTransaction` / `FileAppendTransaction`
-calls.
+Options: `AI Agents` | `Blockchain Security` | `Cloud Computing`
 
-## 1. Setup
+Built with Solidity, compiled in Remix IDE, and deployed/interacted with via
+the Hedera JavaScript SDK on Hedera Testnet.
 
+---
+
+## Features
+
+### Core
+- One vote per Hedera account (`hasVoted` mapping enforced on-chain).
+- Voting results are retrievable at any time and printable via a script.
+- Admin can block specific accounts from voting.
+- Security checks: `onlyOwner` modifier, double-vote prevention, invalid
+  option-index guard, blocked-account guard.
+
+### Additional
+- **Voting deadline** — set at deployment (`votingEndTime`); votes revert
+  once the deadline passes.
+- **Winner calculation** — `getWinner()` returns the leading option, its
+  vote count, and whether there's a tie.
+- **Admin controls** — the deploying account becomes `owner` and is the only
+  account that can block/unblock voters or pause/resume voting.
+- **Events** — `VoteCast`, `VoterBlocked`, `VoterUnblocked`, `VotingPaused`,
+  `VotingResumed` are emitted for a full on-chain audit trail.
+
+---
+
+## Project Structure
+oth-summer-school/
+│
+├── contracts/
+│ └── Voting.sol # The Solidity contract
+│
+├── artifacts/
+│ └── Voting.json # ABI + bytecode (compiled in Remix)
+│
+├── utils/
+│ └── hederaClient.js # Shared Hedera SDK client/helpers
+│
+├── scripts/
+│ ├── vote.js # Cast a vote from a given account
+│ ├── results.js # Print full results + winner/tie
+│ ├── multiVote.js # Batch-vote from multiple test accounts
+│ └── admin.js # Block/unblock, pause/resume voting
+│
+├── compile.js # (not used — compilation done in Remix)
+├── deploy.js # Deploy the contract to Hedera Testnet
+├── call.js # General-purpose read-only query CLI
+├── deployment.json # Auto-generated after deploy.js runs
+│
+├── .env.example
+├── .gitignore
+├── package.json
+└── README.md
+
+---
+
+## Setup
+
+1. **Install dependencies**
 ```bash
-npm install
-cp .env.example .env      # then fill in your Testnet operator ID + key
+   npm install
 ```
 
-Get free Testnet credentials at the [Hedera Portal](https://portal.hedera.com/).
+2. **Create testnet accounts**
+   Go to the [Hedera Portal](https://portal.hedera.com/) and create at least
+   2–4 testnet accounts (funded automatically with test HBAR).
 
-## 2. Deploy
-
-Point the script at either a compiler **artifact JSON** or a raw **`.bin`** file:
-
+3. **Configure environment**
 ```bash
-# Hardhat / Foundry / solc artifact JSON
-node deploy.js ./artifacts/MyContract.json
-
-# raw bytecode file
-node deploy.js ./build/MyContract.bin --gas 300000
+   cp .env.example .env
 ```
+   Fill in `HEDERA_OPERATOR_ID` / `HEDERA_OPERATOR_KEY` (this account becomes
+   the contract admin) and as many `HEDERA_ACCOUNT_N_ID` / `_KEY` pairs as
+   you want to test with.
 
-### Constructor arguments
+4. **Compile the contract in Remix**
+   - Paste `contracts/Voting.sol` into [Remix IDE](https://remix.ethereum.org).
+   - Compile with Solidity `0.8.19+`.
+   - Copy the **ABI** and **Bytecode** (`evm.bytecode.object`) from
+     Compilation Details into `artifacts/Voting.json`.
 
-Pass typed arguments in the order the constructor expects them:
-
+5. **Deploy to Hedera Testnet**
 ```bash
-node deploy.js ./artifacts/MyToken.json \
-  --arg-string  "MyToken" \
-  --arg-string  "MTK" \
-  --arg-uint256 1000000
+   node deploy.js 3600
 ```
+   (Argument = voting duration in seconds; defaults to 3600.)
+   Copy the printed `Contract ID` into `CONTRACT_ID` in `.env`.
 
-Supported flags: `--arg-string`, `--arg-address` (accepts `0.0.x` or `0x…`),
-`--arg-uint256`, `--arg-bool`. Extend `parseArgs`/`buildConstructorParams` in
-`deploy.js` for further Solidity types.
+---
 
-### Options
+## Usage
 
-| Flag     | Default  | Description                          |
-|----------|----------|--------------------------------------|
-| `--gas`  | `200000` | Gas limit for contract creation      |
-| `--memo` | *(none)* | Optional contract memo               |
-
-## 3. Call a method (`call.js`)
-
-`call.js` is a **template** for invoking a method on an already-deployed
-contract. Open the file and fill in the `CONFIG` block:
-
-- `CONTRACT_ID` – the contract to call
-- `MODE` – `"query"` for view/pure functions (free), `"execute"` for
-  state-changing ones (costs gas, returns a receipt status)
-- `METHOD_NAME` – the Solidity function name
-- `buildParams()` – add the call arguments in order
-- `RETURN_TYPE` – the single return type to decode (**multiple return values
-  are not supported**); set to `null` if the method returns nothing
-
-Then run:
-
+### Cast a vote
 ```bash
-node call.js
+node scripts/vote.js <optionIndex 0-2> [accountNumber]
+# 0 = AI Agents, 1 = Blockchain Security, 2 = Cloud Computing
+# omit accountNumber to vote as HEDERA_OPERATOR
 ```
 
-It prints the decoded return value, its type, and the call status:
-
-```
-Result
-  Return value : Hello Hedera
-  Return type  : string
-  Call status  : SUCCESS
+### View results
+```bash
+node scripts/results.js
 ```
 
-Supported return types: `string`, `bool`, `address`, `uint256`, `int256`,
-`uint64`, `int64`, `uint32`, `int32`, `bytes`, `bytes32`.
-
-## 4. Deploy output
-
-On success you get the Hedera Contract ID, the EVM address, and a HashScan link:
-
+### Batch-vote from multiple accounts (multi-account test)
+```bash
+node scripts/multiVote.js                  # rotating options
+node scripts/multiVote.js --option 1       # all vote for option 1
+node scripts/multiVote.js --accounts 2,3,4 # choose which accounts
 ```
-✅ Contract deployed successfully
-  Contract ID : 0.0.1234567
-  EVM address : 0x0000000000000000000000000000000000012d687
-  HashScan    : https://hashscan.io/testnet/contract/0.0.1234567
+
+### Admin actions
+```bash
+node scripts/admin.js block <accountId>     [accountNumber]
+node scripts/admin.js unblock <accountId>   [accountNumber]
+node scripts/admin.js pause                 [accountNumber]
+node scripts/admin.js resume                [accountNumber]
+# omit accountNumber to act as the real admin (HEDERA_OPERATOR)
+# pass one to test that non-admins are correctly rejected
 ```
+
+### Ad-hoc read queries
+```bash
+node call.js owner
+node call.js paused
+node call.js timeRemaining
+node call.js votingEndTime
+node call.js getVotes <0-2>
+node call.js isBlocked <accountId>
+node call.js hasVoted <accountId>
+node call.js getWinner
+```
+
+---
+
+## Design Notes
+
+- **Tie detection**: `getWinner()` only counts a genuine tie once at least
+  one vote exists (`highest > 0`). Before any votes are cast, the contract
+  reports the first option (index 0) with 0 votes and `isTie: false`,
+  since "no data yet" isn't the same as a real tie — `results.js` handles
+  this case explicitly in its own display logic.
+- **Gas limits**: the constructor needs ~2,000,000 gas (three `push()`
+  calls to a dynamic `string[]` plus several storage writes cost more than
+  a typical simple constructor). `vote()` and admin functions use lower,
+  fixed gas budgets since they touch far less storage.
+- **Revert reasons**: Hedera's `getReceipt()` generally surfaces failures as
+  `CONTRACT_REVERT_EXECUTED` rather than the Solidity `require()` string
+  itself — this is expected SDK/network behavior, not a bug in the contract.
+
+---
+
+## Tested Scenarios
+
+- ✅ Single vote succeeds; repeat vote from same account reverts.
+- ✅ Multiple distinct Hedera accounts each successfully vote once.
+- ✅ Blocked account is rejected when attempting to vote.
+- ✅ Non-admin account is rejected when calling admin-only functions.
+- ✅ Admin successfully blocks/unblocks accounts and pauses/resumes voting.
+- ✅ Voting while paused is rejected; resumes correctly afterward.
+- ✅ `getWinner()` correctly identifies a leading option once votes diverge.

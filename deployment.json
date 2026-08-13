@@ -1,0 +1,9 @@
+{
+  "contractId": "0.0.10048014",
+  "evmAddress": "0x000000000000000000000000000000000099520e",
+  "network": "testnet",
+  "votingDurationSeconds": 3600,
+  "deployedAt": "2026-08-13T12:48:26.784Z",
+  "votingEndsAt": "2026-08-13T13:48:26.784Z",
+  "hashscanUrl": "https://hashscan.io/testnet/contract/0.0.10048014"
+}
