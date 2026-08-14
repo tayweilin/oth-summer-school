@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tech Workshop Voting</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen text-gray-800 font-sans p-6">
+    <div class="max-w-3xl mx-auto bg-white p-8 rounded-lg shadow-md">
+        <header class="flex justify-between items-center mb-8 border-b pb-4">
+            <h1 class="text-2xl font-bold text-blue-600">Tech Workshop Voting</h1>
+            <div class="bg-green-100 text-green-800 px-4 py-2 rounded font-bold">
+                Connected Automatically! 🚀
+            </div>
+        </header>
+
+        <div id="statusAlert" class="hidden mb-6 p-4 rounded bg-yellow-100 text-yellow-800 border border-yellow-300">
+            <!-- Dynamic status messages -->
+        </div>
+
+        <main id="mainContent">
+            <div class="mb-6 flex justify-between items-end">
+                <div>
+                    <h2 class="text-xl font-semibold mb-1">Which topic should the next tech workshop cover?</h2>
+                    <p id="timeDisplay" class="text-sm text-gray-500">Checking time...</p>
+                </div>
+                <div class="text-right">
+                    <p class="text-sm text-gray-500">Your Status:</p>
+                    <p id="votedStatus" class="font-bold text-gray-700">Unknown</p>
+                </div>
+            </div>
+
+            <!-- Voting Options -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                <!-- Option 0 -->
+                <div class="border rounded-lg p-4 text-center hover:shadow-lg transition">
+                    <h3 class="font-bold text-lg mb-2">AI Agents</h3>
+                    <p class="text-2xl font-black text-blue-600 mb-4" id="votes-0">0</p>
+                    <button onclick="castVote(0)" class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded">
+                        Vote
+                    </button>
+                </div>
+                <!-- Option 1 -->
+                <div class="border rounded-lg p-4 text-center hover:shadow-lg transition">
+                    <h3 class="font-bold text-lg mb-2">Blockchain Security</h3>
+                    <p class="text-2xl font-black text-blue-600 mb-4" id="votes-1">0</p>
+                    <button onclick="castVote(1)" class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded">
+                        Vote
+                    </button>
+                </div>
+                <!-- Option 2 -->
+                <div class="border rounded-lg p-4 text-center hover:shadow-lg transition">
+                    <h3 class="font-bold text-lg mb-2">Cloud Computing</h3>
+                    <p class="text-2xl font-black text-blue-600 mb-4" id="votes-2">0</p>
+                    <button onclick="castVote(2)" class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded">
+                        Vote
+                    </button>
+                </div>
+            </div>
+
+            <!-- Results Panel -->
+            <div class="bg-gray-50 border rounded-lg p-6">
+                <h3 class="font-bold text-lg mb-2">Current Leader</h3>
+                <p id="winnerText" class="text-gray-700">Waiting for data...</p>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // Your Magic Contract Address[cite: 5]
+        const CONTRACT_ADDRESS = "0x000000000000000000000000000000000099520e";
+        
+        // The Magic Network URL
+        const RPC_URL = "https://testnet.hashio.io/api";
+
+        // This is the private key for Account 2 from your .env file![cite: 3]
+        // We took the long string and put "0x" in front of it so the code can read it.
+        const PRIVATE_KEY = "0x557e6097cb99c2d65603510a495fdb349554c521bf6fbc072a52614ef3d72727";
+        
+        const ABI = [
+            "function vote(uint256 optionIndex) external",
+            "function getVotes(uint256 optionIndex) external view returns (uint256)",
+            "function hasVoted(address voter) external view returns (bool)",
+            "function timeRemaining() external view returns (uint256)",
+            "function getWinner() external view returns (string winnerName, uint256 winningVotes, bool isTie)"
+        ];
+
+        const statusAlert = document.getElementById('statusAlert');
+        let contract;
+        let wallet;
+
+        async function init() {
+            try {
+                // Instead of asking MetaMask, we just tell the browser to connect to the network directly!
+                const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
+                
+                // We make a wallet using your magic key
+                wallet = new ethers.Wallet(PRIVATE_KEY, provider);
+                
+                // We connect to your voting game
+                contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, wallet);
+
+                await refreshData();
+            } catch (err) {
+                console.error(err);
+                showAlert("Oops! Something went wrong while connecting.");
+            }
+        }
+
+        async function refreshData() {
+            try {
+                // Update the score for all 3 topics
+                for (let i = 0; i < 3; i++) {
+                    const count = await contract.getVotes(i);
+                    document.getElementById(`votes-${i}`).innerText = count.toString();
+                }
+
+                // Check if you already played the game
+                const voted = await contract.hasVoted(wallet.address);
+                document.getElementById('votedStatus').innerText = voted ? "Already Voted ✅" : "Ready to Vote!";
+                document.getElementById('votedStatus').className = voted ? "font-bold text-green-600" : "font-bold text-blue-600";
+
+                // Check the clock
+                const timeStr = await contract.timeRemaining();
+                const seconds = parseInt(timeStr.toString());
+                if (seconds === 0) {
+                    document.getElementById('timeDisplay').innerText = "The game has ended!";
+                    document.getElementById('timeDisplay').classList.add('text-red-500', 'font-bold');
+                } else {
+                    const minutes = Math.floor(seconds / 60);
+                    document.getElementById('timeDisplay').innerText = `Time left: ${minutes} min ${seconds % 60} sec`;
+                }
+
+                // See who is winning
+                const winnerData = await contract.getWinner();
+                const winningVotes = winnerData.winningVotes.toString();
+
+                if (winningVotes === "0") {
+                    document.getElementById('winnerText').innerText = "Nobody has voted yet.";
+                } else if (winnerData.isTie) {
+                    document.getElementById('winnerText').innerText = `It's a Tie! Highest votes: ${winningVotes}`;
+                } else {
+                    document.getElementById('winnerText').innerHTML = `<span class="font-bold text-blue-600">${winnerData.winnerName}</span> with ${winningVotes} votes!`;
+                }
+
+            } catch (err) {
+                console.error("Trouble fetching data:", err);
+            }
+        }
+
+        async function castVote(optionIndex) {
+            if (!contract) return;
+            try {
+                showAlert(`Sending your vote to the blockchain... Please wait! ⏳`);
+                
+                // Cast the vote!
+                const tx = await contract.vote(optionIndex);
+                
+                showAlert(`Your vote is flying through the internet! Waiting for it to land...`);
+                await tx.wait(); // Wait for the blockchain to say "Okay!"
+                
+                showAlert(`Yay! Your vote was counted! 🎈`);
+                
+                await refreshData();
+                setTimeout(() => statusAlert.classList.add('hidden'), 5000); // Hide the message after 5 seconds
+            } catch (err) {
+                console.error(err);
+                showAlert(`Oh no! The vote didn't work. Did you already vote?`);
+            }
+        }
+
+        function showAlert(msg) {
+            statusAlert.innerText = msg;
+            statusAlert.classList.remove('hidden');
+        }
+
+        // Start the game as soon as the page loads!
+        window.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
